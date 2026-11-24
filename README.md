@@ -25,6 +25,74 @@ On first use, Copilot gives you a terminal setup command. Review the discovered 
 
 Reuses **configuration**, opening its own connections. Copilot-managed OAuth, built-in connectors and unsupported servers use Copilot's original tools. If configuration export is unavailable, JSON discovery still works. Copilot enterprise policy and approvals are not imported; use only where permitted.
 
+## Manual setup on a work PC (Windows)
+
+No GitHub access from Copilot, Git installation, npm install or build is needed. Node.js 22+ must be available on the work PC (`node --version`). Your existing upstream MCP programs and credentials are still required.
+
+### 1. Copy the files
+
+On a machine that can access GitHub, open this repository, choose **Code → Download ZIP**, and extract it. Transfer the extracted folder through your approved internal file-sharing route. If browser downloads work on the work PC, you can download and extract it there instead.
+
+Put the folder at `%USERPROFILE%\Tools\speed-mcp`, with `plugin.json` directly inside it—not inside a second `speed-mcp-main` folder. Keep the whole folder structure, especially `dist/`, `skills/`, `plugin.json`, `mcp.json` and `LICENSE`. The runtime and its dependencies are already bundled in `dist/`; do not copy just `SKILL.md` or run npm.
+
+### 2. Install from the local folder
+
+In PowerShell:
+
+```powershell
+$speedMcpRoot = Join-Path $env:USERPROFILE 'Tools\speed-mcp'
+copilot plugin install "$speedMcpRoot"
+```
+
+This installs from the files on your PC; it does not fetch the plugin from GitHub.
+
+### 3. Approve your existing MCP tools
+
+Open PowerShell in the repository you want Copilot to work on, **not** the Speed MCP folder. Run:
+
+```powershell
+$speedMcpRoot = Join-Path $env:USERPROFILE 'Tools\speed-mcp'
+node "$speedMcpRoot\dist\speed-mcp.mjs" status --workspace "$PWD"
+node "$speedMcpRoot\dist\speed-mcp.mjs" setup --workspace "$PWD"
+```
+
+Review each discovered server and select the exact tools to approve. No second MCP configuration is normally needed. Open a new Copilot session, check `/skills list` and `/mcp`, then ask it to use `/speed-mcp`. Approvals are per workspace; repeat setup for another repository. Host-managed OAuth connections continue through Copilot's original tools.
+
+### If local plugin installation is unavailable
+
+Keep the same complete folder at the same path. Register its skill from disk:
+
+```powershell
+$speedMcpRoot = Join-Path $env:USERPROFILE 'Tools\speed-mcp'
+copilot skill add "$speedMcpRoot\skills\speed-mcp"
+```
+
+Then back up your existing `%USERPROFILE%\.copilot\mcp-config.json` privately and add the `speed-mcp` entry **alongside** your other servers. If `COPILOT_HOME` is set, use `mcp-config.json` in that directory instead. Create the file with this envelope only if it does not exist:
+
+```json
+{
+  "mcpServers": {
+    "speed-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "C:/Users/YOUR_USER/Tools/speed-mcp/dist/speed-mcp.mjs",
+        "serve"
+      ],
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+Replace `YOUR_USER` with your actual Windows profile folder, or use the actual absolute path where you copied Speed MCP. Use forward slashes in JSON paths as shown. If Node is not on Copilot's PATH, set `command` to the absolute path of your approved Node executable. Do not paste the plugin's `${PLUGIN_ROOT}` placeholder into this user configuration; it needs a real absolute path here.
+
+Restart the Copilot session and follow step 3. The skill must stay in the complete Speed MCP folder because its launcher uses the bundled runtime via relative paths. If your organization also disables custom skills or MCP servers, an administrator will need to enable this setup.
+
+### Manual updates
+
+Replace the transferred folder with the new version, keeping its path unchanged. For a local plugin install, run `copilot plugin install "$speedMcpRoot"` again so Copilot refreshes its cached copy, then open a new session. For the direct skill/MCP setup, replace the files and open a new session. Existing approvals remain valid when the upstream server definitions and workspace are unchanged.
+
 [Setup & compatibility](skills/speed-mcp/references/setup.md) · [Workflow language](skills/speed-mcp/references/workflows.md) · [Architecture](docs/architecture.md)
 
 Update: `copilot plugin update speed-mcp`. Development: `npm ci && npm run check`. MIT.
