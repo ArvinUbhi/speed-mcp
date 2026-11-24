@@ -15,11 +15,11 @@ import { runWorkflow } from '../src/engine.mjs';
 const exec=promisify(execFile);
 const fixture=path.resolve('tests/fixtures/mcp-server.mjs');
 async function prepare(t,raw){
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'speed-live-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'speed-live-'));
  await fs.writeFile(path.join(root,'mcp-config.json'),JSON.stringify({mcpServers:{fixture:raw}}));
  const inventory=await discover({workspace:root,copilotHome:root});const entry=inventory.servers.get('fixture');
  const policy={version:1,grants:{[`${entry.workspace}::fixture`]:{fingerprint:entry.fingerprint,tools:['jobs','logs','echo','error','slow']}}};
- const pool=new Pool(inventory,policy);t.after(()=>pool.close());return {root,inventory,policy,pool};
+ const pool=new Pool(inventory,policy);t.after(async()=>{await pool.close();await fs.rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});});return {root,inventory,policy,pool};
 }
 async function httpFixture(t,mode){
  const child=spawn(process.execPath,[fixture,mode],{env:{...process.env,EXPECT_AUTH:'Bearer fixture-secret'},stdio:['ignore','pipe','pipe']});
@@ -64,7 +64,7 @@ test('bundled gateway exposes exactly four tools and runs through MCP protocol',
  const bad=await client.callTool({name:'speed_mcp_run',arguments:{workspace:root,workflow:{code:'bad'}}});assert.equal(bad.isError,true);
 });
 test('bundle is portable without node_modules, including paths with spaces',async t=>{
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'speed portable '));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'speed portable '));t.after(()=>fs.rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100}));
  const target=path.join(root,'speed-mcp.mjs');await fs.copyFile('dist/speed-mcp.mjs',target);
  const {stdout}=await exec(process.execPath,[target,'status','--workspace',root],{cwd:root,env:{...process.env,COPILOT_HOME:root,SPEED_MCP_HOME:path.join(root,'data')}});assert.deepEqual(JSON.parse(stdout).servers,[]);
 });
@@ -87,14 +87,15 @@ test('authenticated environment HTTP proxy tunnels configured calls',async t=>{
  });await new Promise(r=>proxy.listen(0,'127.0.0.1',r));
  t.after(()=>{for(const s of sockets)s.destroy();proxy.close();});
  const keys=['HTTP_PROXY','HTTPS_PROXY','NO_PROXY','http_proxy','https_proxy','no_proxy'];const saved=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
- process.env.HTTP_PROXY=`http://user:password@127.0.0.1:${proxy.address().port}`;process.env.HTTPS_PROXY=process.env.HTTP_PROXY;process.env.NO_PROXY='';process.env.no_proxy='';delete process.env.http_proxy;delete process.env.https_proxy;
+ const proxyUrl=`http://user:password@127.0.0.1:${proxy.address().port}`;
+ process.env.HTTP_PROXY=proxyUrl;process.env.http_proxy=proxyUrl;process.env.HTTPS_PROXY=proxyUrl;process.env.https_proxy=proxyUrl;process.env.NO_PROXY='';process.env.no_proxy='';
  try{
   const {pool}=await prepare(t,{type:'http',url:`http://127.0.0.1:${port}/mcp`,headers:{Authorization:'Bearer fixture-secret'}});
   assert.equal((await pool.call('fixture','echo',{value:'proxied'})).value,'proxied');assert.ok(proxyRequests>0);await pool.close();
  }finally{for(const k of keys)if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}
 });
 test('bundled CLI executes when launched through a symlink',async t=>{
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'speed-symlink-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'speed-symlink-'));t.after(()=>fs.rm(root,{recursive:true,force:true,maxRetries:10,retryDelay:100}));
  const alias=path.join(root,'alias.mjs');
  try{await fs.symlink(path.resolve('dist/speed-mcp.mjs'),alias,'file');}catch(e){if(process.platform==='win32'&&e.code==='EPERM'){t.skip('Windows runner does not permit file symlinks');return;}throw e;}
  const result=await exec(process.execPath,[alias,'status','--workspace',root],{env:{...process.env,COPILOT_HOME:root,SPEED_MCP_HOME:path.join(root,'data')}});assert.deepEqual(JSON.parse(result.stdout).servers,[]);

@@ -109,5 +109,9 @@ export function reportError(e) {
   process.exitCode = 1;
 }
 // Node resolves symlinked entrypoints (including macOS /var -> /private/var) in import.meta.url.
-const invokedFile = process.argv[1] ? await fs.realpath(path.resolve(process.argv[1])).catch(() => path.resolve(process.argv[1])) : null;
-if (invokedFile === fileURLToPath(import.meta.url)) main().catch(reportError);
+const canonicalFile = async file => {
+  const resolved = await fs.realpath(path.resolve(file)).catch(() => path.resolve(file));
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
+const invokedFile = process.argv[1] ? await canonicalFile(process.argv[1]) : null;
+if (invokedFile === await canonicalFile(fileURLToPath(import.meta.url))) main().catch(reportError);
