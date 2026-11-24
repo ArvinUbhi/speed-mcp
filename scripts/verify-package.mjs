@@ -10,7 +10,7 @@ assert.equal(plugin.version,pkg.version);
 assert.deepEqual(mcp.mcpServers['speed-mcp'].args,['${PLUGIN_ROOT}/dist/speed-mcp.mjs','serve']);
 assert.equal(tools.length,4);
 const skill=await fs.readFile('skills/speed-mcp/SKILL.md','utf8');
-assert.match(skill,/^---\nname: speed-mcp\ndescription: .+\n---\n/);
+assert.match(skill.replace(/\r\n/g, '\n'),/^---\nname: speed-mcp\ndescription: .+\n---\n/);
 for(const f of ['scripts/speed-mcp.mjs','references/setup.md','references/workflows.md'])await fs.access(`skills/speed-mcp/${f}`);
 for(const f of ['dist/speed-mcp.mjs','dist/THIRD-PARTY-LICENSES.txt','LICENSE'])await fs.access(f);
 assert.ok((await fs.stat('dist/speed-mcp.mjs')).size<2*1024*1024);
