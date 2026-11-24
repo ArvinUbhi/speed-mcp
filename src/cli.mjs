@@ -108,4 +108,6 @@ export function reportError(e) {
   process.stderr.write(JSON.stringify({ ok: false, error: { code: known ? e.code : 'FAILED', message: known ? e.message : 'Operation failed. Check the input file and configuration; internal details are withheld to protect credentials.' } }) + '\n');
   process.exitCode = 1;
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(reportError);
+// Node resolves symlinked entrypoints (including macOS /var -> /private/var) in import.meta.url.
+const invokedFile = process.argv[1] ? await fs.realpath(path.resolve(process.argv[1])).catch(() => path.resolve(process.argv[1])) : null;
+if (invokedFile === fileURLToPath(import.meta.url)) main().catch(reportError);

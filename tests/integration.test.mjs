@@ -93,3 +93,9 @@ test('authenticated environment HTTP proxy tunnels configured calls',async t=>{
   assert.equal((await pool.call('fixture','echo',{value:'proxied'})).value,'proxied');assert.ok(proxyRequests>0);await pool.close();
  }finally{for(const k of keys)if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}
 });
+test('bundled CLI executes when launched through a symlink',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'speed-symlink-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const alias=path.join(root,'alias.mjs');
+ try{await fs.symlink(path.resolve('dist/speed-mcp.mjs'),alias,'file');}catch(e){if(process.platform==='win32'&&e.code==='EPERM'){t.skip('Windows runner does not permit file symlinks');return;}throw e;}
+ const result=await exec(process.execPath,[alias,'status','--workspace',root],{env:{...process.env,COPILOT_HOME:root,SPEED_MCP_HOME:path.join(root,'data')}});assert.deepEqual(JSON.parse(result.stdout).servers,[]);
+});
