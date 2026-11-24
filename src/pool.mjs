@@ -1,3 +1,4 @@
+import { VERSION } from './version.mjs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -52,7 +53,7 @@ export class Pool {
       transport = c.kind === 'sse' ? new SSEClientTransport(new URL(c.url), options) : new StreamableHTTPClientTransport(new URL(c.url), options);
     }
     this.transports.add(transport);
-    const client = new Client({ name: 'speed-mcp', version: '1.0.0' }); this.clients.add(client);
+    const client = new Client({ name: 'speed-mcp', version: VERSION }); this.clients.add(client);
     let timer;
     try {
       await Promise.race([
@@ -75,7 +76,7 @@ export class Pool {
     } finally { clearTimeout(timer); }
   }
   async catalog(name) { return (await this.connect(name)).tools; }
-  async call(name, tool, args, signal) {
+  async validateArguments(name, tool, args) {
     authorize(this.entry(name), this.policy, tool);
     const conn = await this.connect(name);
     const definition = conn.tools.find(t => t.name === tool);
@@ -88,6 +89,10 @@ export class Pool {
       } catch { fail('SCHEMA_UNSUPPORTED', `Cannot validate ${name}/${tool}'s input schema. Use its direct Copilot tool.`); }
     }
     if (!validate(args)) fail('ARGUMENTS_INVALID', `Arguments do not match ${name}/${tool}. Inspect speed_mcp_describe before calling.`);
+    return conn;
+  }
+  async call(name, tool, args, signal) {
+    const conn = await this.validateArguments(name, tool, args);
     let result;
     try { result = await conn.client.callTool({ name: tool, arguments: args }, undefined, { timeout: Math.min(conn.config.timeout, 60000), signal: signal ? AbortSignal.any([signal, this.controller.signal]) : this.controller.signal }); }
     catch (e) { fail('TOOL_FAILED', `${name}/${tool} failed or was interrupted. Check the direct tool and connection. Upstream diagnostics are withheld to protect credentials. No automatic retry was made.`); }

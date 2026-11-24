@@ -54,3 +54,22 @@ test('deadline cancels catalog discovery before any application call',async()=>{
  p.catalog=()=>new Promise((resolve,reject)=>{rejectCatalog=reject;});p.abort=()=>rejectCatalog?.(Error('catalog canceled'));
  const r=await runWorkflow({...plan([call()]),timeoutMs:100},p);assert.equal(r.ok,false);assert.equal(called,false);assert.ok(r.stats.durationMs<1000);
 });
+test('reference typos and invalid expression operands fail before any side effect',async()=>{
+ for(const invalid of [{$ref:'steps.typo.id'},{$op:'map',input:[],wrong:1},{$ref:'item.id'},{$ref:'result.id'},{$op:'constructor',input:[]}]){
+  let calls=0;const r=await runWorkflow({...plan([call()]),return:invalid},fake(async()=>{calls++;return {};}));assert.equal(r.ok,false);assert.equal(calls,0);
+ }
+ assert.throws(()=>checkWorkflow(plan([{...call(),call:{server:'s',tool:'read',arguments:{x:{$ref:'steps.one'}}}}])),{code:'REFERENCE_ORDER'});
+});
+test('dry run checks tools and estimates calls without application execution',async()=>{
+ let calls=0;const p=fake(async()=>{calls++;});let validated=0;p.validateArguments=async()=>{validated++;};
+ const r=await runWorkflow(plan([{...call(),forEach:[1,2,3],paginate:{cursorArgument:'cursor',items:'items',nextCursor:'next',maxPages:2}}]),p,{dryRun:true});
+ assert.equal(r.ok,true);assert.equal(r.dryRun,true);assert.equal(r.estimatedMaximumCalls,6);assert.equal(r.stats.calls,0);assert.equal(calls,0);assert.equal(validated,1);
+});
+test('static argument errors on a later step prevent earlier application calls',async()=>{
+ let calls=0;const p=fake(async()=>{calls++;});p.validateArguments=async(s,t,args)=>{if(args.bad)throw Object.assign(Error('bad arguments'),{code:'ARGUMENTS_INVALID'});};
+ const r=await runWorkflow(plan([call('first'),{id:'second',call:{server:'s',tool:'read',arguments:{bad:true}}}]),p);
+ assert.equal(r.error.code,'ARGUMENTS_INVALID');assert.equal(calls,0);
+});
+test('map scopes and literal references validate without inventing dependencies',()=>{
+ checkWorkflow({version:1,steps:[{...call(),call:{server:'s',tool:'read',arguments:{value:{$literal:{$ref:'external.literal'}}}}}],return:{$op:'map',input:[{id:1}],select:{$ref:'item.id'}}});
+});

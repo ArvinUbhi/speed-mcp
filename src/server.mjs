@@ -1,3 +1,4 @@
+import { VERSION } from './version.mjs';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -11,10 +12,10 @@ export const tools = [
   { name: 'speed_mcp_status', description: 'Inspect discovered upstream MCP JSON and existing local approvals without starting any server. Missing/OAuth/unapproved tools must use the original Copilot tools. Never changes configuration or grants.', inputSchema: schema({}) },
   { name: 'speed_mcp_search', description: 'Search live tool catalogs of approved upstream MCP servers. Returns at most 20 names and short descriptions, not every schema. Server startup can execute its configured command. Narrow with server when possible.', inputSchema: schema({ query: { type: 'string', maxLength: 200 }, server: { type: 'string' } }, ['query']) },
   { name: 'speed_mcp_describe', description: 'Read the exact current input schema for one upstream MCP tool. Inspect this before building a workflow; never invent arguments or result paths.', inputSchema: schema({ server: { type: 'string' }, tool: { type: 'string' } }, ['server','tool']) },
-  { name: 'speed_mcp_run', description: 'Execute a bounded version-1 JSON workflow over explicitly approved MCP tools. Supports dependent steps, foreach, pagination, conditions and projections. No arbitrary JavaScript/shell. No retries or rollback. On failure inspect trace and do not blindly rerun completed writes. Read the speed-mcp skill workflow reference first.', inputSchema: schema({ workflow: workflowSchema }, ['workflow']) }
+  { name: 'speed_mcp_run', description: 'Execute a bounded version-1 JSON workflow over explicitly approved MCP tools. Supports dependent steps, foreach, pagination, conditions and projections. No arbitrary JavaScript/shell. No retries or rollback. Use dryRun=true to inspect the plan before execution. On failure inspect trace and do not blindly rerun completed writes. Read the speed-mcp skill workflow reference first.', inputSchema: schema({ workflow: workflowSchema, dryRun: { type: 'boolean', description: 'Validate the plan, grants, live tool availability and static arguments without invoking any application tools. Starts approved servers for discovery.' } }, ['workflow']) }
 ];
 export async function serve(options = {}) {
-  const server = new Server({ name: 'speed-mcp', version: '1.0.0' }, { capabilities: { tools: {} } });
+  const server = new Server({ name: 'speed-mcp', version: VERSION }, { capabilities: { tools: {} } });
   const ajv = new Ajv({ strict: false }); const checks = new Map(tools.map(t => [t.name, ajv.compile(t.inputSchema)]));
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
@@ -28,7 +29,7 @@ export async function serve(options = {}) {
         case 'speed_mcp_status': value = await status(opts); break;
         case 'speed_mcp_search': value = await search(args.query, { ...opts, server: args.server }); break;
         case 'speed_mcp_describe': value = await describe(args.server, args.tool, opts); break;
-        case 'speed_mcp_run': value = await run(args.workflow, opts); break;
+        case 'speed_mcp_run': value = await run(args.workflow, { ...opts, dryRun: args.dryRun === true }); break;
       }
       const text = JSON.stringify(value);
       if (Buffer.byteLength(text) > 96000) throw Object.assign(new Error('Response too large. Narrow to one server or tool.'), { code: 'OUTPUT_LIMIT' });

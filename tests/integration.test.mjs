@@ -100,3 +100,11 @@ test('bundled CLI executes when launched through a symlink',async t=>{
  try{await fs.symlink(path.resolve('dist/speed-mcp.mjs'),alias,'file');}catch(e){if(process.platform==='win32'&&e.code==='EPERM'){t.skip('Windows runner does not permit file symlinks');return;}throw e;}
  const result=await exec(process.execPath,[alias,'status','--workspace',root],{env:{...process.env,COPILOT_HOME:root,SPEED_MCP_HOME:path.join(root,'data')}});assert.deepEqual(JSON.parse(result.stdout).servers,[]);
 });
+test('real dry run validates live schemas and leaves application call log empty',async t=>{
+ const {randomUUID}=await import('node:crypto');const log=path.join(os.tmpdir(),`speed-dry-${randomUUID()}.log`);t.after(()=>fs.rm(log,{force:true}));
+ const {pool}=await prepare(t,{command:process.execPath,args:[fixture],env:{CALL_LOG:log}});
+ const valid={version:1,steps:[{id:'x',call:{server:'fixture',tool:'echo',arguments:{value:5}}}],return:{$ref:'steps.x'}};
+ const r=await runWorkflow(valid,pool,{dryRun:true});assert.equal(r.ok,true);assert.equal(r.stats.calls,0);await assert.rejects(fs.access(log),{code:'ENOENT'});
+ const invalid={version:1,steps:[{id:'first',call:{server:'fixture',tool:'jobs'}},{id:'bad',call:{server:'fixture',tool:'logs',arguments:{id:'wrong-type'}}}],return:{$ref:'steps.first'}};
+ const bad=await runWorkflow(invalid,pool);assert.equal(bad.error.code,'ARGUMENTS_INVALID');assert.equal(bad.stats.calls,0);await assert.rejects(fs.access(log),{code:'ENOENT'});
+});

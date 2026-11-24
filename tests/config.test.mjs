@@ -34,3 +34,35 @@ test('grants invalidate after config change and require exact tool names',()=>{
  assert.ok(authorize(entry,policy,'read'));assert.throws(()=>authorize(entry,policy,'write'),{code:'TOOL_NOT_APPROVED'});assert.throws(()=>authorize({...entry,fingerprint:'changed'},policy),{code:'SETUP_REQUIRED'});
 });
 test('policy save/load preserves approvals without secrets',async t=>{const root=await fixture(t);const p={version:1,grants:{a:{fingerprint:'hash',tools:['read']}}};const f=path.join(root,'data','policy.json');await savePolicy(p,f);assert.deepEqual(await loadPolicy(f),p);assert.deepEqual(await loadPolicy(path.join(root,'missing')),{version:1,grants:{}});});
+test('Copilot export discovers plugin servers and preserves JSON approval hashes',async t=>{
+ const root=await fixture(t);await write(path.join(root,'mcp-config.json'),{mcpServers:{user:{command:'node'}}});
+ const base=await discover({workspace:root,copilotHome:root,inventoryReader:async()=>({mode:'json',servers:null})});
+ const inventoryReader=async()=>({mode:'copilot+json',servers:{user:{command:'node',enabled:true,source:'user'},plugin:{type:'stdio',command:'node',args:['${PLUGIN_ROOT}/server.mjs'],env:{PLUGIN_ROOT:root},source:'plugin',sourcePlugin:'demo',sourcePluginVersion:'1.0.0'}}});
+ const next=await discover({workspace:root,copilotHome:root,inventoryReader});
+ assert.equal(next.servers.get('user').fingerprint,base.servers.get('user').fingerprint);
+ assert.equal(materialize(next.servers.get('plugin')).args[0],`${root}/server.mjs`);
+ assert.equal(next.discoveryMode,'copilot+json');assert.equal(next.servers.get('plugin').source,'copilot:plugin:demo');
+});
+test('Copilot disabled state is respected and explicit config retains precedence',async t=>{
+ const root=await fixture(t);await write(path.join(root,'mcp-config.json'),{mcpServers:{user:{command:'node'}}});await write(path.join(root,'extra.json'),{mcpServers:{plugin:{command:'explicit'}}});
+ const inventoryReader=async()=>({mode:'copilot+json',servers:{user:{command:'node',enabled:false},plugin:{command:'exported'}}});
+ const d=await discover({workspace:root,copilotHome:root,inventoryReader,configs:[path.join(root,'extra.json')]});
+ assert.throws(()=>materialize(d.servers.get('user')),{code:'SERVER_DISABLED'});assert.equal(d.servers.get('plugin').raw.command,'explicit');
+});
+test('parallel policy mutations preserve every independently approved server',async t=>{
+ const {updatePolicy}=await import('../src/config.mjs');const root=await fixture(t);const file=path.join(root,'policy.json');
+ await Promise.all(Array.from({length:8},(_,i)=>updatePolicy(async p=>{await new Promise(r=>setTimeout(r,5));p.grants[`workspace::server${i}`]={fingerprint:`hash${i}`,tools:['read']};},file)));
+ assert.equal(Object.keys((await loadPolicy(file)).grants).length,8);
+});
+test('busy policy lock fails explicitly and invalid approvals fail closed',async t=>{
+ const {updatePolicy}=await import('../src/config.mjs');const root=await fixture(t);const file=path.join(root,'policy.json');
+ await fs.writeFile(`${file}.lock`,'{}');await assert.rejects(updatePolicy(()=>{},file,{timeoutMs:30}),{code:'POLICY_BUSY'});
+ await write(file,{version:1,grants:{bad:{fingerprint:'hash',tools:'*'}}});await assert.rejects(loadPolicy(file),{code:'POLICY_INVALID'});
+});
+test('separate Node processes merge approvals without losing either update',async t=>{
+ const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');const {pathToFileURL}=await import('node:url');
+ const root=await fixture(t);const file=path.join(root,'policy.json');const moduleUrl=pathToFileURL(path.resolve('src/config.mjs')).href;
+ const code=`import {updatePolicy} from ${JSON.stringify(moduleUrl)};await updatePolicy(async p=>{await new Promise(r=>setTimeout(r,30));p.grants[process.argv[2]]={fingerprint:'hash',tools:['read']};},process.argv[1]);`;
+ await Promise.all(['first','second'].map(key=>promisify(execFile)(process.execPath,['--input-type=module','-e',code,file,key])));
+ assert.deepEqual(Object.keys((await loadPolicy(file)).grants).sort(),['first','second']);
+});

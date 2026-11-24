@@ -145,6 +145,14 @@ The names and response fields below are illustrative. Replace them using actual 
 }
 ```
 
+## Preflight and dry-run
+
+Offline `validate` checks structure, expression operands, reference scope and step order. A typo such as `steps.jobz` is rejected before any application call. JSON literal values remain possible through `$literal`.
+
+Use gateway `speed_mcp_run` with `dryRun: true`, or CLI `plan --file PLAN --workspace PATH` / `run --dry-run --file PLAN --workspace PATH`. The engine starts approved servers to check live catalogs, exact tool grants and input schemas. All arguments without references are evaluated and validated before execution, including arguments on later steps. No application tools are invoked by a dry-run. Arguments with references are resolved and validated at execution; actual output paths cannot be guaranteed in advance.
+
+The dry-run report contains per-step conservative maximum call counts, effective limits, static/dynamic argument status and advisory read-only annotations. A dynamic collection assumes maxItems, and pagination assumes maxPages; the estimate may exceed actual work. A budget warning means the runtime could stop before completing the full collection. Narrow the plan instead of treating the warning as proof it will finish.
+
 ## Results and failures
 
 Success: `{ok:true,result:...,trace:[...],stats:{calls,intermediateBytes,returnedBytes,durationMs}}`.

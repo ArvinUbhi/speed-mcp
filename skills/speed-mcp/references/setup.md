@@ -36,13 +36,14 @@ Precedence, lowest to highest:
 
 1. `COPILOT_HOME/mcp-config.json`, or `~/.copilot/mcp-config.json` if COPILOT_HOME is unset.
 2. Within a Git repository, each directory from its root to the task workspace: `.github/mcp.json`, then `.mcp.json`. The nearer directory wins. `.git` can be a directory or a worktree file. Outside a Git repository, no ancestor repository files are loaded.
-3. Explicit extra files in `SPEED_MCP_CONFIGS` (OS path delimiter), followed by repeated `--config` CLI arguments or gateway `configs` entries.
+3. The passive `copilot mcp list --json` configuration export adds servers absent from JSON discovery, including installed-plugin definitions. JSON server hashes remain stable; exported disabled state is respected.
+4. Explicit extra files in `SPEED_MCP_CONFIGS` (OS path delimiter), followed by repeated `--config` CLI arguments or gateway `configs` entries.
 
-Accepted envelopes: `{ "mcpServers": {...} }`, `{ "servers": {...} }` and a bare server map. This permits explicitly supplying a VS Code-format file, but Speed MCP does not automatically scan `.vscode/mcp.json`. Input files must be JSON, not JSONC. A malformed discovered file causes an explicit error rather than silently ignoring part of the configuration.
+Accepted envelopes: `{ "mcpServers": {...} }`, `{ "servers": {...} }` and a bare server map. This permits explicitly supplying a VS Code-format file, but Speed MCP does not automatically scan `.vscode/mcp.json`. Input files must be JSON, not JSONC. The CLI export does not replace host policy enforcement or supply OAuth sessions. Exported sources appear as `copilot:plugin:NAME` in status; review them privately with `copilot mcp get SERVER --json`. A malformed discovered file causes an explicit error rather than silently ignoring part of the configuration.
 
 The plugin's own gateway definition and recognizable recursive copies are skipped. Never pass Speed MCP's own mcp.json as an upstream source.
 
-Plugin-only upstream definitions are not automatically enumerated from Copilot's internal plugin cache or activation state. If the server is available directly in Copilot, use that tool immediately. To enable helper execution, establish the actual upstream plugin mcp.json path and explicitly include it in setup AND subsequent requests. Do not scrape authentication caches. For persistent additional sources, configure SPEED_MCP_CONFIGS in the shell that launches Copilot; separate multiple paths with `;` on Windows or `:` on Unix.
+Plugin MCPs are discovered automatically when Copilot provides a supported configuration export. This inventories configuration without starting upstream MCPs, and avoids guessing internal plugin-cache paths. The export is capped at 2 MiB and 8 seconds; missing/older CLI versions or unsupported output fall back to JSON files with a warning. Set SPEED_MCP_COPILOT_BIN to the trusted Copilot executable if it is not on PATH, or SPEED_MCP_DISCOVERY=json to use files only. No separate configuration copy is saved. For a server absent from both sources, use the direct tool, or establish the actual upstream plugin mcp.json path and explicitly include it in setup AND subsequent requests. Do not scrape authentication caches. For persistent additional sources, configure SPEED_MCP_CONFIGS in the shell that launches Copilot; separate multiple paths with `;` on Windows or `:` on Unix.
 
 Example for an established extra file:
 
@@ -66,7 +67,7 @@ The gateway request must then include `"configs":["<upstream-plugin>/mcp.json"]`
 | `cwd` / `workingDirectory` | Resolve relative to task workspace; default is the workspace |
 | `env` | Explicit configured child-process variables; `${NAME}` and `${env:NAME}` expand from the parent shell |
 | `headers` | Explicit headers, with the same environment expansion |
-| `${PLUGIN_ROOT}` | Directory containing the explicitly supplied upstream MCP JSON |
+| `${PLUGIN_ROOT}` | Root supplied by Copilot for exported plugin definitions, or directory containing an explicitly supplied upstream MCP JSON |
 | `${input:...}` or OAuth/OIDC fields | Unsupported host-managed credentials; use direct tools |
 
 No automatic interactive OAuth login or credential-store integration exists. A remote definition with only a URL may still require Copilot-managed OAuth; if the helper cannot authenticate, use the original tool. Never promise setup can export Copilot's authenticated session.
@@ -89,11 +90,12 @@ Run commands through `node "<skill-directory>/scripts/speed-mcp.mjs" COMMAND`:
 - `doctor --workspace PATH`: connect to already approved servers and count available tools; never invokes application tools.
 - `search --query TEXT --server NAME --workspace PATH`: narrow catalog search.
 - `describe --server NAME --tool NAME --workspace PATH`: one original tool schema.
-- `validate --file PLAN`: structural validation only.
+- `validate --file PLAN`: check structure, expression syntax, reference scope and step order without connections.
+- `plan --file PLAN --workspace PATH`: check live catalogs/grants/static arguments without application calls.
 - `run --file PLAN --workspace PATH`: execute a bounded workflow.
 - `revoke --server NAME --workspace PATH`: remove that server's local grant.
 
-All commands accept repeated `--config PATH`. Policy defaults to `~/.copilot/speed-mcp/policy.json` (under COPILOT_HOME when set); SPEED_MCP_HOME overrides its containing directory. Policy contains hashes, tool names and approval timestamps, not copied server credentials. File modes are restrictive on Unix; Windows protection depends on the user's directory ACLs. The policy is a local trust record, not a security boundary against a process that can edit the user's files.
+All commands accept repeated `--config PATH`. Policy defaults to `~/.copilot/speed-mcp/policy.json` (under COPILOT_HOME when set); SPEED_MCP_HOME overrides its containing directory. Policy contains hashes, tool names and approval timestamps, not copied server credentials. File modes are restrictive on Unix; Windows protection depends on the user's directory ACLs. Setup and revoke merge changes against fresh state under a cross-process file lock, so simultaneous sessions do not overwrite each other’s approvals. A busy or leftover crash lock reports POLICY_BUSY; inspect it before manually removing it. Invalid policy records fail closed. The policy is a local trust record, not a security boundary against a process that can edit the user's files.
 
 ## Troubleshooting sequence
 

@@ -1,12 +1,13 @@
 import Ajv from 'ajv';
 import { authorize, fail } from './config.mjs';
+import { inspectPlan, hasReference } from './plan.mjs';
 const ajv = new Ajv({ allErrors: true, strict: false });
 const stepSchema = {
   type: 'object', additionalProperties: false, required: ['id', 'call'],
   properties: {
     id: { type: 'string', pattern: '^[a-zA-Z][a-zA-Z0-9_-]{0,63}$' },
     call: { type: 'object', additionalProperties: false, required: ['server','tool'], properties: {
-      server: { type: 'string', minLength: 1 }, tool: { type: 'string', minLength: 1 }, arguments: { type: 'object' }
+      server: { type: 'string', minLength: 1, maxLength: 200 }, tool: { type: 'string', minLength: 1, maxLength: 200 }, arguments: { type: 'object' }
     } },
     forEach: {}, when: {}, select: {},
     concurrency: { type: 'integer', minimum: 1, maximum: 8 },
@@ -74,8 +75,9 @@ export function checkWorkflow(plan) {
     ids.add(step.id);
     if (!Object.hasOwn(step, 'forEach') && step.concurrency !== undefined) fail('WORKFLOW_INVALID', 'concurrency requires forEach.');
   }
+  inspectPlan(plan);
 }
-export async function runWorkflow(plan, pool, { signal, maxOutputBytes = 65536, maxMemoryBytes = 8 * 1024 * 1024 } = {}) {
+export async function runWorkflow(plan, pool, { signal, dryRun = false, maxOutputBytes = 65536, maxMemoryBytes = 8 * 1024 * 1024 } = {}) {
   const started = Date.now(); const trace = []; let calls = 0; let memoryBytes = 0;
   const steps = Object.create(null); let currentStep = null;
   const controller = new AbortController();
@@ -88,12 +90,38 @@ export async function runWorkflow(plan, pool, { signal, maxOutputBytes = 65536, 
   try {
     checkWorkflow(plan);
     timer = setTimeout(abort, plan.timeoutMs ?? 120000);
+    const prepared = []; let maximumCalls = 0;
     // Validate every named tool and grant before the first operation can have effects.
     for (const step of plan.steps) {
-      ensureActive();
+      currentStep = step.id; ensureActive();
       authorize(pool.entry(step.call.server), pool.policy, step.call.tool);
       const tools = await pool.catalog(step.call.server);
-      if (!tools.some(t => t.name === step.call.tool)) fail('TOOL_UNAVAILABLE', `${step.call.server}/${step.call.tool} is unavailable.`);
+      const definition = tools.find(t => t.name === step.call.tool);
+      if (!definition) fail('TOOL_UNAVAILABLE', `${step.call.server}/${step.call.tool} is unavailable.`);
+      const args = step.call.arguments ?? {};
+      if (!hasReference(args)) await pool.validateArguments?.(step.call.server, step.call.tool, expression(args, { steps: {} }));
+      let iterations = 1;
+      if (Object.hasOwn(step,'forEach')) {
+        if (hasReference(step.forEach)) iterations = plan.maxItems ?? 500;
+        else {
+          const items = expression(step.forEach, { steps: {} });
+          if (!Array.isArray(items) || items.length > (plan.maxItems ?? 500)) fail('ITEM_LIMIT', 'forEach requires an array within maxItems.');
+          iterations = items.length;
+        }
+      }
+      if (Object.hasOwn(step,'when') && !hasReference(step.when) && !expression(step.when,{steps:{}})) iterations = 0;
+      const bound = iterations * (step.paginate?.maxPages ?? 1); maximumCalls += bound;
+      prepared.push({ id: step.id, server: step.call.server, tool: step.call.tool, maximumCalls: bound,
+        arguments: hasReference(args) ? 'resolved and validated at execution' : 'validated before execution',
+        serverClaimsReadOnly: definition.annotations?.readOnlyHint === true });
+    }
+    if (dryRun) {
+      ensureActive();
+      return { ok: true, dryRun: true, steps: prepared, estimatedMaximumCalls: maximumCalls,
+        limits: { maxCalls: plan.maxCalls ?? 100, maxItems: plan.maxItems ?? 500, timeoutMs: plan.timeoutMs ?? 120000 },
+        warnings: maximumCalls > (plan.maxCalls ?? 100) ? ['The conservative maximum exceeds the call budget. Narrow collections or pagination before execution.'] : [],
+        stats: { calls: 0, durationMs: Date.now() - started },
+        notice: 'No application tools were invoked. Approved servers were started to inspect catalogs. Dynamic arguments/result paths and business effects cannot be verified until execution. Read-only annotations are advisory.' };
     }
     async function invoke(step, local) {
       ensureActive();

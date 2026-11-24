@@ -25,10 +25,10 @@ Complete the user's task using the available tools. Prefer a bounded workflow wh
 | `ENV_MISSING` | Explain which variable is missing and have the user start Copilot from their configured shell. Never ask them to paste the secret. |
 | `AUTH_UNAVAILABLE` | Use the authenticated direct Copilot tool. Do not scrape Copilot token caches or attempt to extract host-managed credentials. |
 | `SERVER_DISABLED` | Respect the disabled state. Do not enable or clone it to get around the restriction. |
-| Missing server | Use the direct tool if available. Upstream plugin-only configuration can be supplied explicitly after its path is established; see setup. Do not guess installation-cache paths. |
+| Missing server | Use the direct tool if available. Status automatically tries Copilot’s configuration export, including plugin definitions. If export is unavailable, upstream plugin JSON can be supplied explicitly after its path is established; see setup. Do not guess installation-cache paths. |
 | Any connection error | Give the actionable reason, fall back to direct tools when available, and continue the independent parts of the task. |
 
-Speed MCP reads user and repository configuration plus explicitly supplied files. It does not inherit Copilot's live connections, organizational allowlists, plugin activation, per-tool approvals or OAuth store. Do not claim otherwise. On corporate machines, helper use must be permitted by the organization; terminal setup is an explicit approval of a separate MCP client, not a policy bypass.
+Speed MCP reads user/repository JSON and attempts the passive `copilot mcp list --json` configuration export, then explicit files. The export can supply plugin definitions and disabled state; it does not share live connections, organizational policy enforcement, per-tool approvals or the OAuth store. Do not claim otherwise. On corporate machines, helper use must be permitted by the organization; terminal setup is an explicit approval of a separate MCP client, not a policy bypass.
 
 ## Discover only what is needed
 
@@ -54,7 +54,9 @@ Read `references/workflows.md` BEFORE constructing the first workflow in the ses
 
 ## Execute and verify
 
-Prefer `speed_mcp_run` with `workspace` and `workflow`. With the CLI fallback, save the plan to a temporary task file and run `node "<absolute-skill-directory>/scripts/speed-mcp.mjs" validate --file "<plan-path>"`, then `run --file "<plan-path>" --workspace "<task-workspace>"`. Pass identical `--config` arguments for status, setup and execution when extra configs are needed. CLI validation checks structure only; it does not prove result paths or live arguments are correct.
+For a multi-step plan involving writes or unfamiliar tool schemas, first call `speed_mcp_run` with `dryRun: true`, the same `workspace`, and the proposed `workflow`. This starts only approved servers to inspect catalogs; it invokes no application tools. Inspect the plan’s warnings, conservative call estimate, grants and static argument checks. Dynamic result paths and arguments still require runtime verification; a successful dry-run does not prove business safety or authorize a write. Use `plan --file "<plan-path>" --workspace "<task-workspace>"` with the CLI fallback. Do not execute if the dry-run fails.
+
+Prefer `speed_mcp_run` with `workspace` and `workflow`. With the CLI fallback, save the plan to a temporary task file and run `node "<absolute-skill-directory>/scripts/speed-mcp.mjs" validate --file "<plan-path>"`, then `run --file "<plan-path>" --workspace "<task-workspace>"`. Pass identical `--config` arguments for status, setup and execution when extra configs are needed. CLI validation checks structure, expression syntax, scope and reference order. Live dry-run checks schemas/grants and static arguments; dynamic result paths require execution.
 
 Inspect `ok`, `result`, `trace` and `stats`. A returned object is not proof of success if `ok` is false or the MCP envelope has `isError: true`. Every named tool is checked for availability and grants before the first call. Dynamic arguments are validated against the actual input schema immediately before each call.
 
@@ -66,9 +68,9 @@ For mutations, verify actual resulting state using an approved read or a direct 
 - Do not automatically retry writes or rerun a failed workflow containing completed writes. Inspect remote state, use server-supported idempotency keys if available, then construct only the remaining authorized work.
 - No automatic retry or rollback exists. Cancellation is best effort; it cannot reverse remote effects. Concurrency can leave other already-started calls in flight.
 - For `ARGUMENTS_INVALID`, inspect the live schema again and fix the arguments.
-- For `REFERENCE_MISSING`, inspect actual output shape; never silently substitute an empty value.
+- For `REFERENCE_ORDER` or `REFERENCE_SCOPE`, fix the step ID, order or expression scope before execution. For `REFERENCE_MISSING`, inspect actual output shape; never silently substitute an empty value.
 - For `PAGE_LIMIT`, `PAGINATION_LOOP`, `ITEM_LIMIT`, `CALL_LIMIT`, `RESULT_LIMIT`, `MEMORY_LIMIT` or `OUTPUT_LIMIT`, narrow the query or projection. Report incompleteness. Do not silently describe a partial result as exhaustive.
-- Never edit the policy file, run setup with `--yes`, broaden tool grants, disable certificate validation, enable a disabled server, or change upstream JSON just to make a workflow pass. Only execute a noninteractive grant if the user explicitly authorized those exact servers and tool names.
+- Never edit the policy file, broaden tool grants, disable certificate validation, enable a disabled server, or change upstream JSON just to make a workflow pass. Only execute a noninteractive grant if the user explicitly authorized those exact servers and tool names.
 - Do not report token savings as measured tokens. `stats` reports response bytes and call counts, not model token usage, inference cost or end-to-end speed.
 
 ## Finish

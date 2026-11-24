@@ -9,7 +9,7 @@ export async function context(options = {}) {
 export async function status(options = {}) {
   const inventory = await discover(options); const policy = await loadPolicy(options.policyFile);
   return {
-    workspace: inventory.workspace, sources: inventory.sources, scope: inventory.scope, warnings: inventory.warnings,
+    workspace: inventory.workspace, discoveryMode: inventory.discoveryMode, sources: inventory.sources, scope: inventory.scope, warnings: inventory.warnings,
     servers: [...inventory.servers.values()].map(entry => {
       let state = 'ready'; let reason;
       try { materialize(entry); authorize(entry, policy); } catch (e) { state = e.code; reason = e.message; }
@@ -50,6 +50,6 @@ export async function describe(server, tool, options = {}) {
 }
 export async function run(plan, options = {}) {
   const { pool } = await context(options);
-  try { return await runWorkflow(plan, pool, { signal: options.signal }); }
+  try { return await runWorkflow(plan, pool, { signal: options.signal, dryRun: options.dryRun }); }
   finally { await pool.close(); }
 }
