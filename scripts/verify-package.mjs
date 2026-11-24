@@ -1,0 +1,17 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { tools } from '../src/server.mjs';
+const plugin=JSON.parse(await fs.readFile('plugin.json','utf8'));
+const mcp=JSON.parse(await fs.readFile('mcp.json','utf8'));
+const pkg=JSON.parse(await fs.readFile('package.json','utf8'));
+assert.equal(plugin.$schema,'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json');
+assert.equal(mcp.$schema,'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json');
+assert.equal(plugin.version,pkg.version);
+assert.deepEqual(mcp.mcpServers['speed-mcp'].args,['${PLUGIN_ROOT}/dist/speed-mcp.mjs','serve']);
+assert.equal(tools.length,4);
+const skill=await fs.readFile('skills/speed-mcp/SKILL.md','utf8');
+assert.match(skill,/^---\nname: speed-mcp\ndescription: .+\n---\n/);
+for(const f of ['scripts/speed-mcp.mjs','references/setup.md','references/workflows.md'])await fs.access(`skills/speed-mcp/${f}`);
+for(const f of ['dist/speed-mcp.mjs','dist/THIRD-PARTY-LICENSES.txt','LICENSE'])await fs.access(f);
+assert.ok((await fs.stat('dist/speed-mcp.mjs')).size<2*1024*1024);
+console.log('Plugin, skill, bundled runtime and redistribution licenses verified.');

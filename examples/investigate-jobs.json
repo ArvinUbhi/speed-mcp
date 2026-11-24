@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "maxCalls": 40,
+  "maxItems": 30,
+  "steps": [
+    {
+      "id": "jobs",
+      "call": {"server": "processes", "tool": "list_jobs", "arguments": {"state": "failed"}},
+      "paginate": {"cursorArgument": "cursor", "nextCursor": "nextCursor", "items": "items", "maxPages": 5}
+    },
+    {
+      "id": "logs",
+      "forEach": {"$ref": "steps.jobs"},
+      "concurrency": 2,
+      "call": {"server": "processes", "tool": "get_log", "arguments": {"jobId": {"$ref": "item.id"}}},
+      "select": {"id": {"$ref": "item.id"}, "error": {"$ref": "result.error"}}
+    }
+  ],
+  "return": {"jobsChecked": {"$op": "count", "input": {"$ref": "steps.logs"}}, "evidence": {"$ref": "steps.logs"}}
+}

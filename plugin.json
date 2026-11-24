@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "speed-mcp",
+  "version": "1.0.0",
+  "description": "Less tool chatter. More work. Run bounded workflows using your existing MCP configuration.",
+  "author": {
+    "name": "Arvin Ubhi"
+  },
+  "repository": "https://github.com/ArvinUbhi/speed-mcp",
+  "license": "MIT"
+}
